@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wolf AI - Sales Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 25%, #fbbf24 50%, #f59e0b 75%, #d97706 100%);
+            min-height: 100vh;
+            /* REMOVED: overflow: hidden; */
+        }
+        
+        .wolf-gradient {
+            background: linear-gradient(135deg, #f59e0b, #d97706, #b45309);
+        }
+        
+        .glass-effect {
+            backdrop-filter: blur(16px);
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .glass-card {
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .glass-card:hover {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: rgba(245, 158, 11, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+        
+        .chat-container {
+            height: 60vh; /* FIXED: Changed from calc(100vh - 160px) to a more reliable height */
+            max-height: 600px; /* ADDED: Maximum height constraint */
+            overflow-y: auto;
+            overflow-x: hidden; /* ADDED: Prevent horizontal scroll */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #d97706, #b45309);
+        }
+
+        .message-bubble {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .message-bubble:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+        }
+        
+        .tab-active {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+        
+        .tab-inactive {
+            background: rgba(255, 255, 255, 0.3);
+            color: #6b7280;
+        }
+
+        .recording {
+            animation: recordingPulse 1.5s infinite;
+            background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+        }
+
+        @keyframes recordingPulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+
+        .voice-wave {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 40px;
+        }
+
+        .voice-bar {
+            width: 3px;
+            margin: 0 1px;
+            background: linear-gradient(to top, #ef4444, #f97316, #eab308);
+            border-radius: 2px;
+            animation: voiceWave 1.5s infinite ease-in-out;
+        }
+
+        .voice-bar:nth-child(2) { animation-delay: 0.1s; }
+        .voice-bar:nth-child(3) { animation-delay: 0.2s; }
+        .voice-bar:nth-child(4) { animation-delay: 0.3s; }
+        .voice-bar:nth-child(5) { animation-delay: 0.4s; }
+
+        @keyframes voiceWave {
+            0%, 100% { height: 10px; }
+            50% { height: 30px; }
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(245, 158, 11, 0.1);
+            border-radius: 8px;
+        }
+
+        .audio-btn {
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .audio-btn:hover {
+            background: rgba(245, 158, 11, 0.3);
+        }
+
+        .audio-btn.playing {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.3);
+            color: #22c55e;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        .animate-slide-up {
+            animation: slideUp 0.4s ease-out;
+        }
+
+        /* ADDED: Ensure proper container heights */
+        .main-container {
+            min-height: calc(100vh - 120px);
+        }
+
+        .left-panel {
+            max-height: calc(100vh - 140px);
+            overflow-y: auto;
+        }
+
+        .right-panel {
+            height: calc(100vh - 140px);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-interface {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* IMPORTANT: Allows flex child to shrink */
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+    <!-- Header -->
+    <header class="glass-effect border-b border-orange-200 p-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <div class="relative">
+                    <div class="wolf-gradient w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-2xl text-white shadow-lg">
+                        🐺
+                    </div>
+                    <div class="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+                </div>
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800">
+                        Wolf AI
+                    </h1>
+                    <p class="text-orange-600 text-sm font-medium">AI-Powered Sales Assistant</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="glass-card px-4 py-2 rounded-xl">
+                    <span class="text-xs text-gray-600">Welcome, {{ user_name }}!</span>
+                </div>
+                <div id="source-counter" class="glass-card px-4 py-2 rounded-xl">
+                    <span class="text-xs text-gray-600">Sources:</span>
+                    <span class="text-lg font-bold text-orange-600 ml-2" id="source-count">0</span>
+                </div>
+                <button id="logout-btn" class="glass-card px-4 py-2 rounded-xl hover:bg-red-100 text-red-600 transition-all">
+                    <span class="text-sm">Logout</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="max-w-7xl mx-auto p-4 grid grid-cols-1 xl:grid-cols-4 gap-6 main-container">
+        
+        <!-- Left Panel - Product Source Upload -->
+        <div class="xl:col-span-1 space-y-4 left-panel custom-scrollbar">
+            
+            <!-- Source Tabs -->
+            <div class="glass-effect rounded-2xl p-4">
+                <h2 class="text-xl font-bold mb-4 text-gray-800">
+                    Product Information
+                </h2>
+                
+                <!-- Tab Navigation -->
+                <div class="flex space-x-2 mb-4">
+                    <button class="tab-button flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all tab-active" data-tab="pdf">
+                        📄 Catalog
+                    </button>
+                    <button class="tab-button flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all tab-inactive" data-tab="website">
+                        🌐 Website
+                    </button>
+                </div>
+
+                <!-- PDF Upload Tab -->
+                <div id="pdf-tab" class="tab-content">
+                    <div id="pdf-upload-area" class="border-2 border-dashed border-orange-400 rounded-xl p-6 text-center hover:border-orange-500 transition-all cursor-pointer group">
+                        <div class="group-hover:animate-bounce">
+                            <svg class="w-10 h-10 mx-auto text-orange-500 mb-3 group-hover:text-orange-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                        </div>
+                        <p class="text-gray-700 mb-2 font-medium">Upload Product Catalog</p>
+                        <p class="text-sm text-gray-500">PDF files supported</p>
+                        <input type="file" id="pdf-input" accept=".pdf" class="hidden">
+                    </div>
+                </div>
+
+                <!-- Website URL Tab -->
+                <div id="website-tab" class="tab-content hidden">
+                    <div class="space-y-4">
+                        <div class="relative">
+                            <input 
+                                type="url" 
+                                id="website-input" 
+                                placeholder="Enter website URL" 
+                                class="w-full bg-white/50 border border-orange-300 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                            >
+                        </div>
+                        <button 
+                            id="load-website-btn" 
+                            class="w-full wolf-gradient text-white py-3 rounded-xl font-medium transition-all transform hover:scale-105 shadow-lg hover:shadow-xl"
+                        >
+                            Load Website Content
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="upload-status" class="mt-4 hidden">
+                    <div class="glass-card rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Processing...</span>
+                            <span class="text-sm text-orange-600" id="upload-progress">0%</span>
+                        </div>
+                        <div class="w-full bg-orange-200 rounded-full h-2 overflow-hidden">
+                            <div class="wolf-gradient h-2 rounded-full transition-all duration-500" id="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Source Status Cards -->
+            <div class="space-y-3">
+                <div id="pdf-status" class="glass-card rounded-xl p-3 opacity-50">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                            <span class="text-red-500">📄</span>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-medium text-gray-700 text-sm">PDF Catalog</h3>
+                            <p class="text-xs text-gray-500" id="pdf-status-text">Not loaded</p>
+                        </div>
+                        <div class="w-3 h-3 bg-red-400 rounded-full" id="pdf-indicator"></div>
+                    </div>
+                </div>
+
+                <div id="website-status" class="glass-card rounded-xl p-3 opacity-50">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                            <span class="text-red-500">🌐</span>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-medium text-gray-700 text-sm">Website</h3>
+                            <p class="text-xs text-gray-500" id="website-status-text">Not loaded</p>
+                        </div>
+                        <div class="w-3 h-3 bg-red-400 rounded-full" id="website-indicator"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Clear Sources Button -->
+            <button id="clear-sources-btn" class="w-full glass-card hover:bg-red-100 border-red-300 text-red-600 hover:text-red-700 py-3 rounded-xl font-medium transition-all transform hover:scale-105 flex items-center justify-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                <span>Clear All Sources</span>
+            </button>
+        </div>
+
+        <!-- Right Panel - Chat Interface -->
+        <div class="xl:col-span-3 right-panel">
+            <div class="glass-effect rounded-2xl chat-interface">
+                
+                <!-- Chat Header -->
+                <div class="p-4 border-b border-orange-200 wolf-gradient text-white flex-shrink-0">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold">Wolf AI Chat</h2>
+                            <p class="text-orange-100 text-sm">Your intelligent sales assistant</p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="glass-card px-3 py-1 rounded-lg bg-white/20">
+                                <span class="text-xs text-white">Active Sources:</span>
+                                <div class="flex space-x-1 mt-1" id="active-sources">
+                                    <!-- Dynamic source indicators -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Messages - FIXED scrolling area -->
+                <div id="chat-messages" class="flex-1 p-4 space-y-4 custom-scrollbar chat-container">
+                    <div class="message-bubble glass-card rounded-2xl p-4 animate-fade-in">
+                        <div class="flex items-start space-x-3">
+                            <div class="wolf-gradient w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-bold text-white shadow-lg">
+                                🐺
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2 mb-2">
+                                    <span class="font-semibold text-orange-600">Wolf AI</span>
+                                    <span class="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">AI ASSISTANT</span>
+                                </div>
+                                <div class="text-gray-700 leading-relaxed">
+                                    <p class="mb-3">🚀 <strong>Welcome to Wolf AI Sales Assistant!</strong></p>
+                                    <p class="mb-3">I'm here to help you with product information and customer support.</p>
+                                    <div class="bg-orange-50 rounded-lg p-3 mb-3">
+                                        <h4 class="font-semibold text-orange-800 mb-2">What I can do:</h4>
+                                        <ul class="space-y-2 text-sm">
+                                            <li class="flex items-center space-x-2">
+                                                <span class="text-orange-500">📄</span>
+                                                <span><strong>Product Expertise</strong> - Answer questions about your products</span>
+                                            </li>
+                                            <li class="flex items-center space-x-2">
+                                                <span class="text-green-500">💰</span>
+                                                <span><strong>Sales Support</strong> - Help customers find the right products</span>
+                                            </li>
+                                            <li class="flex items-center space-x-2">
+                                                <span class="text-purple-500">🎯</span>
+                                                <span><strong>Recommendations</strong> - Suggest products based on needs</span>
+                                            </li>
+                                            <li class="flex items-center space-x-2">
+                                                <span class="text-red-500">🎤</span>
+                                                <span><strong>Voice Support</strong> - Talk to me using voice commands</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <p class="text-gray-600 bg-orange-100 p-3 rounded-lg">
+                                        <strong>Get Started:</strong> Upload your product catalog (PDF) or add your website URL, then ask me anything!
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="p-4 border-t border-orange-200 bg-orange-50 flex-shrink-0">
+                    <div class="flex space-x-3">
+                        <div class="flex-1 relative">
+                            <textarea 
+                                id="chat-input" 
+                                placeholder="Ask Wolf AI about products, features, pricing..."
+                                class="w-full bg-white border border-orange-300 rounded-2xl px-4 py-3 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all resize-none min-h-[50px] max-h-[120px]"
+                                disabled
+                                rows="1"
+                            ></textarea>
+                            <div class="absolute bottom-2 right-2 flex items-center space-x-2">
+                                <span class="text-xs text-gray-500" id="char-count">0/500</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Voice Recording Button -->
+                        <button 
+                            id="voice-btn" 
+                            class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-2xl font-semibold transition-all transform hover:scale-105 disabled:transform-none flex items-center space-x-2 shadow-lg hover:shadow-xl"
+                            disabled
+                            title="Click to record voice message"
+                        >
+                            <svg id="voice-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                            </svg>
+                            <span id="voice-text">Voice</span>
+                        </button>
+                        
+                        <button 
+                            id="send-button" 
+                            class="wolf-gradient hover:from-orange-600 hover:to-yellow-600 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed text-white px-6 py-3 rounded-2xl font-semibold transition-all transform hover:scale-105 disabled:transform-none flex items-center space-x-2 shadow-lg hover:shadow-xl"
+                            disabled
+                        >
+                            <svg id="send-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                            </svg>
+                            <span id="send-text">Send</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Quick Actions -->
+                    <div class="flex flex-wrap gap-2 mt-3" id="quick-actions">
+                        <button class="quick-action-btn glass-card px-3 py-2 rounded-lg text-sm text-gray-600 hover:text-gray-800 hover:bg-orange-100 transition-all" data-action="product-overview">
+                            🏷️ Product Overview
+                        </button>
+                        <button class="quick-action-btn glass-card px-3 py-2 rounded-lg text-sm text-gray-600 hover:text-gray-800 hover:bg-green-100 transition-all" data-action="pricing">
+                            💰 Pricing Info
+                        </button>
+                        <button class="quick-action-btn glass-card px-3 py-2 rounded-lg text-sm text-gray-600 hover:text-gray-800 hover:bg-purple-100 transition-all" data-action="features">
+                            ⭐ Key Features
+                        </button>
+                        <button class="quick-action-btn glass-card px-3 py-2 rounded-lg text-sm text-gray-600 hover:text-gray-800 hover:bg-blue-100 transition-all" data-action="compare">
+                            📊 Compare Products
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Recording Modal -->
+    <div id="voice-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+        <div class="glass-effect rounded-2xl p-8 max-w-md w-full mx-4">
+            <div class="text-center">
+                <div class="w-20 h-20 bg-gradient-to-br from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-4 recording">
+                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">Recording Voice Message</h3>
+                <p class="text-gray-600 mb-4">Speak clearly about your questions</p>
+                <div class="voice-wave mb-6">
+                    <div class="voice-bar"></div>
+                    <div class="voice-bar"></div>
+                    <div class="voice-bar"></div>
+                    <div class="voice-bar"></div>
+                    <div class="voice-bar"></div>
+                </div>
+                <div class="flex space-x-4">
+                    <button id="stop-recording" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-medium transition-all">
+                        Stop Recording
+                    </button>
+                    <button id="cancel-recording" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-xl font-medium transition-all">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class WolfAIChatbot {
+            constructor() {
+                this.sessionId = 'session_' + Date.now();
+                this.isLoading = false;
+                this.loadedSources = { pdf: false, website: false };
+                this.activeTab = 'pdf';
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.recordingTimer = null;
+                this.recordingStartTime = 0;
+                this.speechSynthesis = window.speechSynthesis;
+                this.currentUtterance = null;
+                this.voices = [];
+                this.isPlaying = false;
+                
+                this.initializeElements();
+                this.bindEvents();
+                this.updateStatus();
+                this.setupAutoResize();
+                this.checkVoiceSupport();
+                this.initializeSpeechSynthesis();
+                
+                setInterval(() => this.updateStatus(), 30000);
+            }
+
+            initializeElements() {
+                // Tab elements
+                this.tabButtons = document.querySelectorAll('.tab-button');
+                this.tabContents = document.querySelectorAll('.tab-content');
+                
+                // Upload elements
+                this.pdfUploadArea = document.getElementById('pdf-upload-area');
+                this.pdfInput = document.getElementById('pdf-input');
+                this.websiteInput = document.getElementById('website-input');
+                this.loadWebsiteBtn = document.getElementById('load-website-btn');
+                
+                // Status elements
+                this.uploadStatus = document.getElementById('upload-status');
+                this.progressBar = document.getElementById('progress-bar');
+                this.uploadProgress = document.getElementById('upload-progress');
+                this.sourceCount = document.getElementById('source-count');
+                this.activeSourcesDiv = document.getElementById('active-sources');
+                
+                // Chat elements
+                this.chatMessages = document.getElementById('chat-messages');
+                this.chatInput = document.getElementById('chat-input');
+                this.sendButton = document.getElementById('send-button');
+                this.sendIcon = document.getElementById('send-icon');
+                this.sendText = document.getElementById('send-text');
+                this.charCount = document.getElementById('char-count');
+                this.quickActionBtns = document.querySelectorAll('.quick-action-btn');
+                
+                // Voice elements
+                this.voiceBtn = document.getElementById('voice-btn');
+                this.voiceIcon = document.getElementById('voice-icon');
+                this.voiceText = document.getElementById('voice-text');
+                this.voiceModal = document.getElementById('voice-modal');
+                this.stopRecordingBtn = document.getElementById('stop-recording');
+                this.cancelRecordingBtn = document.getElementById('cancel-recording');
+                
+                // Control elements
+                this.clearSourcesBtn = document.getElementById('clear-sources-btn');
+                this.logoutBtn = document.getElementById('logout-btn');
+            }
+
+            bindEvents() {
+                // Tab switching
+                this.tabButtons.forEach(btn => {
+                    btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+                });
+
+                // PDF upload
+                this.pdfUploadArea.addEventListener('click', () => this.pdfInput.click());
+                this.pdfUploadArea.addEventListener('dragover', this.handleDragOver.bind(this));
+                this.pdfUploadArea.addEventListener('drop', (e) => this.handleFileDrop(e, 'pdf'));
+                this.pdfInput.addEventListener('change', (e) => this.handleFileSelect(e, 'pdf'));
+
+                // Website loading
+                this.loadWebsiteBtn.addEventListener('click', () => this.loadWebsite());
+                this.websiteInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.loadWebsite();
+                });
+
+                // Chat functionality
+                this.sendButton.addEventListener('click', () => this.sendMessage());
+                this.chatInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+                this.chatInput.addEventListener('input', () => this.updateCharCount());
+
+                // Voice functionality
+                this.voiceBtn.addEventListener('click', () => this.toggleVoiceRecording());
+                this.stopRecordingBtn.addEventListener('click', () => this.stopRecording());
+                this.cancelRecordingBtn.addEventListener('click', () => this.cancelRecording());
+
+                // Quick actions
+                this.quickActionBtns.forEach(btn => {
+                    btn.addEventListener('click', () => this.handleQuickAction(btn.dataset.action));
+                });
+                // Control buttons
+                this.clearSourcesBtn.addEventListener('click', () => this.clearAllSources());
+                this.logoutBtn.addEventListener('click', () => this.logout());
+            }
+
+            async logout() {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (response.ok) {
+                        window.location.href = '/login';
+                    }
+                } catch (error) {
+                    console.error('Logout failed:', error);
+                    window.location.href = '/login';
+                }
+            }
+
+            initializeSpeechSynthesis() {
+                if (this.speechSynthesis) {
+                    this.loadVoices();
+                    this.speechSynthesis.onvoiceschanged = () => {
+                        this.loadVoices();
+                    };
+                    this.testSpeechSynthesis();
+                }
+            }
+
+            loadVoices() {
+                this.voices = this.speechSynthesis.getVoices();
+                console.log('Available voices:', this.voices.length);
+            }
+
+            async testSpeechSynthesis() {
+                try {
+                    const testUtterance = new SpeechSynthesisUtterance('');
+                    testUtterance.volume = 0;
+                    testUtterance.rate = 10;
+                    this.speechSynthesis.speak(testUtterance);
+                } catch (error) {
+                    console.warn('Speech synthesis test failed:', error);
+                }
+            }
+
+            checkVoiceSupport() {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    this.voiceBtn.disabled = true;
+                    this.voiceBtn.title = 'Voice recording not supported in this browser';
+                    this.showNotification('Voice recording is not supported in this browser', 'error');
+                }
+
+                if (!this.speechSynthesis) {
+                    this.showNotification('Text-to-speech is not supported in this browser', 'error');
+                }
+            }
+
+            async toggleVoiceRecording() {
+                if (this.isRecording) {
+                    this.stopRecording();
+                } else {
+                    await this.startRecording();
+                }
+            }
+
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            sampleRate: 44100
+                        }
+                    });
+                    
+                    this.mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus'
+                    });
+                    this.audioChunks = [];
+                    this.isRecording = true;
+                    this.recordingStartTime = Date.now();
+                    
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+                    
+                    this.mediaRecorder.onstop = () => {
+                        this.processRecording();
+                    };
+                    
+                    this.mediaRecorder.start(100);
+                    this.showVoiceRecordingUI();
+                    
+                } catch (error) {
+                    this.showNotification('Could not access microphone: ' + error.message, 'error');
+                }
+            }
+
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    this.hideVoiceRecordingUI();
+                }
+            }
+
+            cancelRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    this.audioChunks = [];
+                    this.hideVoiceRecordingUI();
+                }
+            }
+
+            showVoiceRecordingUI() {
+                this.voiceModal.classList.remove('hidden');
+                this.voiceBtn.classList.add('recording');
+                this.voiceIcon.innerHTML = `
+                    <svg class="w-5 h-5 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                    </svg>
+                `;
+                this.voiceText.textContent = 'Recording...';
+            }
+
+            hideVoiceRecordingUI() {
+                this.voiceModal.classList.add('hidden');
+                this.voiceBtn.classList.remove('recording');
+                this.voiceIcon.innerHTML = `
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                `;
+                this.voiceText.textContent = 'Voice';
+            }
+
+            async processRecording() {
+                if (this.audioChunks.length === 0) return;
+                
+                const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'voice-message.wav');
+                
+                this.showNotification('Processing voice message...', 'info');
+                
+                try {
+                    const response = await fetch('/api/speech-to-text', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success && result.text.trim()) {
+                        this.chatInput.value = result.text;
+                        this.updateCharCount();
+                        this.showNotification('Voice message transcribed successfully!', 'success');
+                        
+                        if (result.text.trim().length > 10) {
+                            setTimeout(() => this.sendMessage(), 1000);
+                        }
+                    } else {
+                        this.showNotification('Could not understand the voice message. Please try again.', 'error');
+                    }
+                } catch (error) {
+                    this.showNotification('Voice processing failed: ' + error.message, 'error');
+                }
+            }
+
+            async speakResponse(text, buttonElement = null) {
+                if (!this.speechSynthesis) {
+                    this.showNotification('Text-to-speech is not supported in this browser', 'error');
+                    return;
+                }
+
+                this.stopSpeech();
+
+                try {
+                    const cleanText = text
+                        .replace(/[🚀📄💰🎯📋🎤⭐📊🏷️🌐•]/g, '')
+                        .replace(/\*\*(.*?)\*\*/g, '$1')
+                        .replace(/\*(.*?)\*/g, '$1')
+                        .replace(/#{1,6}\s/g, '')
+                        .replace(/\n+/g, '. ')
+                        .trim();
+
+                    if (!cleanText) {
+                        this.showNotification('No text to speak', 'error');
+                        return;
+                    }
+
+                    this.currentUtterance = new SpeechSynthesisUtterance(cleanText);
+                    
+                    this.currentUtterance.rate = 0.9;
+                    this.currentUtterance.pitch = 1.0;
+                    this.currentUtterance.volume = 0.8;
+                    this.currentUtterance.lang = 'en-US';
+
+                    if (this.voices.length > 0) {
+                        const preferredVoice = this.voices.find(voice => 
+                            (voice.name.includes('Google') || voice.name.includes('Microsoft')) && 
+                            voice.lang.includes('en')
+                        ) || this.voices.find(voice => voice.lang.includes('en-US')) ||
+                           this.voices.find(voice => voice.lang.includes('en'));
+                        
+                        if (preferredVoice) {
+                            this.currentUtterance.voice = preferredVoice;
+                        }
+                    }
+
+                    this.currentUtterance.onstart = () => {
+                        this.isPlaying = true;
+                        if (buttonElement) {
+                            buttonElement.textContent = '⏸️ Playing...';
+                            buttonElement.classList.add('playing');
+                        }
+                        // Show all stop buttons
+                        document.querySelectorAll('.stop-btn').forEach(btn => {
+                            btn.style.display = 'inline-block';
+                        });
+                    };
+
+                    this.currentUtterance.onend = () => {
+                        this.isPlaying = false;
+                        if (buttonElement) {
+                            buttonElement.textContent = '🔊 Play';
+                            buttonElement.classList.remove('playing');
+                        }
+                        // Hide all stop buttons
+                        document.querySelectorAll('.stop-btn').forEach(btn => {
+                            btn.style.display = 'none';
+                        });
+                    };
+
+                    this.currentUtterance.onerror = (event) => {
+                        this.isPlaying = false;
+                        if (buttonElement) {
+                            buttonElement.textContent = '🔊 Play';
+                            buttonElement.classList.remove('playing');
+                        }
+                        // Hide all stop buttons
+                        document.querySelectorAll('.stop-btn').forEach(btn => {
+                            btn.style.display = 'none';
+                        });
+                        console.error('Speech error:', event.error);
+                        this.showNotification('Speech playback failed: ' + event.error, 'error');
+                    };
+
+                    this.speechSynthesis.speak(this.currentUtterance);
+                    
+                } catch (error) {
+                    this.isPlaying = false;
+                    if (buttonElement) {
+                        buttonElement.textContent = '🔊 Play';
+                        buttonElement.classList.remove('playing');
+                    }
+                    console.error('Speech synthesis error:', error);
+                    this.showNotification('Failed to play speech: ' + error.message, 'error');
+                }
+            }
+
+            stopSpeech() {
+                if (this.speechSynthesis) {
+                    this.speechSynthesis.cancel();
+                    this.isPlaying = false;
+                    
+                    document.querySelectorAll('.play-btn').forEach(btn => {
+                        btn.textContent = '🔊 Play';
+                        btn.classList.remove('playing');
+                    });
+                    
+                    // Hide all stop buttons
+                    document.querySelectorAll('.stop-btn').forEach(btn => {
+                        btn.style.display = 'none';
+                    });
+                }
+            }
+
+            switchTab(tabName) {
+                this.activeTab = tabName;
+                
+                this.tabButtons.forEach(btn => {
+                    if (btn.dataset.tab === tabName) {
+                        btn.className = btn.className.replace('tab-inactive', 'tab-active');
+                    } else {
+                        btn.className = btn.className.replace('tab-active', 'tab-inactive');
+                    }
+                });
+                
+                this.tabContents.forEach(content => {
+                    if (content.id === `${tabName}-tab`) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                e.currentTarget.classList.add('border-orange-500', 'bg-orange-100');
+            }
+
+            handleFileDrop(e, type) {
+                e.preventDefault();
+                e.currentTarget.classList.remove('border-orange-500', 'bg-orange-100');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.uploadFile(files[0], type);
+                }
+            }
+
+            handleFileSelect(e, type) {
+                if (e.target.files.length > 0) {
+                    this.uploadFile(e.target.files[0], type);
+                }
+            }
+
+            async uploadFile(file, type) {
+                const formData = new FormData();
+                formData.append(type, file);
+
+                this.showUploadProgress();
+
+                try {
+                    const response = await fetch(`/api/load_${type}`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    this.hideUploadProgress();
+
+                    if (result.success) {
+                        this.loadedSources[type] = true;
+                        this.updateSourceStatus(type, true, result);
+                        this.showNotification(`${type.toUpperCase()} loaded successfully! Wolf AI is ready to help.`, 'success');
+                        this.enableChat();
+                    } else {
+                        this.showNotification(result.error || 'Upload failed', 'error');
+                    }
+                } catch (error) {
+                    this.hideUploadProgress();
+                    this.showNotification('Upload failed: ' + error.message, 'error');
+                }
+            }
+
+            async loadWebsite() {
+                const url = this.websiteInput.value.trim();
+                if (!url) {
+                    this.showNotification('Please enter a valid website URL', 'error');
+                    return;
+                }
+
+                this.showUploadProgress();
+
+                try {
+                    const response = await fetch('/api/load_website', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url })
+                    });
+
+                    const result = await response.json();
+                    this.hideUploadProgress();
+
+                    if (result.success) {
+                        this.loadedSources.website = true;
+                        this.updateSourceStatus('website', true, result);
+                        this.showNotification('Website loaded successfully! Wolf AI is ready for sales assistance.', 'success');
+                        this.enableChat();
+                    } else {
+                        this.showNotification(result.error || 'Failed to load website', 'error');
+                    }
+                } catch (error) {
+                    this.hideUploadProgress();
+                    this.showNotification('Failed to load website: ' + error.message, 'error');
+                }
+            }
+
+            async sendMessage(customMessage = null) {
+                const message = customMessage || this.chatInput.value.trim();
+                if (!message || this.isLoading) return;
+
+                if (message.length > 500) {
+                    this.showNotification('Please keep your message under 500 characters.', 'error');
+                    return;
+                }
+
+                if (!this.hasAnySource()) {
+                    this.showNotification('Please load product information first (PDF catalog or website)', 'error');
+                    return;
+                }
+
+                this.chatInput.value = '';
+                this.updateCharCount();
+                this.setLoadingState(true);
+
+                this.addMessage('user', message);
+                this.showTypingIndicator();
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: message,
+                            session_id: this.sessionId
+                        })
+                    });
+
+                    const result = await response.json();
+                    this.hideTypingIndicator();
+
+                    if (result.success) {
+                        this.addMessage('assistant', result.response, result.source_type, result.loaded_sources);
+                        
+                        if (result.response.length < 300) {
+                            setTimeout(() => {
+                                this.speakResponse(result.response);
+                            }, 1000);
+                        }
+                    } else {
+                        this.addMessage('assistant', 'I apologize, but I encountered an error: ' + (result.error || 'Unknown error'));
+                    }
+                } catch (error) {
+                    this.hideTypingIndicator();
+                    this.addMessage('assistant', 'I apologize, but I encountered a connection error. Please try again.');
+                }
+
+                this.setLoadingState(false);
+            }
+
+            addMessage(sender, content, sourceType = null, loadedSources = null) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message-bubble animate-slide-up';
+                
+                if (sender === 'user') {
+                    const sanitizedContent = this.sanitizeText(content);
+                    
+                    const messageCard = document.createElement('div');
+                    messageCard.className = 'glass-card bg-gradient-to-r from-orange-100 to-yellow-100 border-orange-200 rounded-2xl p-4 ml-8';
+                    
+                    const messageContainer = document.createElement('div');
+                    messageContainer.className = 'flex items-start space-x-3';
+                    
+                    const contentContainer = document.createElement('div');
+                    contentContainer.className = 'flex-1';
+                    
+                    const headerContainer = document.createElement('div');
+                    headerContainer.className = 'flex items-center space-x-2 mb-2';
+                    
+                    const userLabel = document.createElement('span');
+                    userLabel.className = 'font-semibold text-orange-700';
+                    userLabel.textContent = 'Customer';
+                    
+                    const userBadge = document.createElement('span');
+                    userBadge.className = 'text-xs bg-orange-200 text-orange-700 px-2 py-1 rounded-full';
+                    userBadge.textContent = 'USER';
+                    
+                    const messageText = document.createElement('p');
+                    messageText.className = 'text-gray-800 leading-relaxed';
+                    messageText.textContent = sanitizedContent;
+                    
+                    const avatarContainer = document.createElement('div');
+                    avatarContainer.className = 'w-8 h-8 bg-orange-200 rounded-xl flex items-center justify-center text-sm font-bold';
+                    avatarContainer.textContent = '👤';
+                    
+                    headerContainer.appendChild(userLabel);
+                    headerContainer.appendChild(userBadge);
+                    contentContainer.appendChild(headerContainer);
+                    contentContainer.appendChild(messageText);
+                    messageContainer.appendChild(contentContainer);
+                    messageContainer.appendChild(avatarContainer);
+                    messageCard.appendChild(messageContainer);
+                    messageDiv.appendChild(messageCard);
+                    
+                } else {
+                    const cleanContent = this.processMessageContent(content);
+                    const sourceInfo = this.createSourceInfo(sourceType, loadedSources);
+                    
+                    const messageCard = document.createElement('div');
+                    messageCard.className = 'glass-card rounded-2xl p-4 mr-8';
+                    
+                    const messageContainer = document.createElement('div');
+                    messageContainer.className = 'flex items-start space-x-3';
+                    
+                    const avatarContainer = document.createElement('div');
+                    avatarContainer.className = 'wolf-gradient w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-bold text-white shadow-lg';
+                    avatarContainer.textContent = '🐺';
+                    
+                    const contentContainer = document.createElement('div');
+                    contentContainer.className = 'flex-1';
+                    
+                    const headerContainer = document.createElement('div');
+                    headerContainer.className = 'flex items-center space-x-2 mb-3';
+                    
+                    const assistantLabel = document.createElement('span');
+                    assistantLabel.className = 'font-semibold text-orange-600';
+                    assistantLabel.textContent = 'Wolf AI';
+                    
+                    const assistantBadge = document.createElement('span');
+                    assistantBadge.className = 'text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full';
+                    assistantBadge.textContent = 'AI ASSISTANT';
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.className = 'text-gray-700 leading-relaxed space-y-3';
+                    messageContent.innerHTML = cleanContent;
+                    
+                    const audioControls = document.createElement('div');
+                    audioControls.className = 'audio-controls mt-3';
+                    
+                    const playBtn = document.createElement('button');
+                    playBtn.className = 'audio-btn play-btn';
+                    playBtn.textContent = '🔊 Play';
+                    playBtn.onclick = (e) => {
+                        e.preventDefault();
+                        this.speakResponse(content, playBtn);
+                    };
+                    
+                    const stopBtn = document.createElement('button');
+                    stopBtn.className = 'audio-btn stop-btn';
+                    stopBtn.textContent = '⏹️ Stop';
+                    stopBtn.onclick = (e) => {
+                        e.preventDefault();
+                        this.stopSpeech();
+                    };
+                    
+                    // Show/hide stop button based on playing state
+                    if (this.isPlaying) {
+                        stopBtn.style.display = 'inline-block';
+                    } else {
+                        stopBtn.style.display = 'none';
+                    }
+                    
+                    audioControls.appendChild(playBtn);
+                    audioControls.appendChild(stopBtn);
+                    
+                    headerContainer.appendChild(assistantLabel);
+                    headerContainer.appendChild(assistantBadge);
+                    
+                    if (sourceInfo) {
+                        const sourceContainer = document.createElement('div');
+                        sourceContainer.innerHTML = sourceInfo;
+                        headerContainer.appendChild(sourceContainer);
+                    }
+                    
+                    contentContainer.appendChild(headerContainer);
+                    contentContainer.appendChild(messageContent);
+                    contentContainer.appendChild(audioControls);
+                    messageContainer.appendChild(avatarContainer);
+                    messageContainer.appendChild(contentContainer);
+                    messageCard.appendChild(messageContainer);
+                    messageDiv.appendChild(messageCard);
+                }
+
+                this.chatMessages.appendChild(messageDiv);
+                // FIXED: Improved scrolling behavior
+                this.scrollToBottom();
+            }
+
+            // ADDED: Better scroll to bottom function
+            scrollToBottom() {
+                setTimeout(() => {
+                    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+                }, 100);
+            }
+
+            sanitizeText(text) {
+                if (!text) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            processMessageContent(content) {
+                if (!content) return '';
+                
+                let processed = this.sanitizeText(content);
+                
+                const paragraphs = processed.split('\n\n').filter(p => p.trim());
+                if (paragraphs.length > 1) {
+                    processed = paragraphs.map(p => `<p class="mb-3">${p.trim()}</p>`).join('');
+                } else {
+                    processed = `<p>${processed}</p>`;
+                }
+
+                processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong class="text-orange-600 font-semibold">$1</strong>');
+                processed = processed.replace(/\*(.*?)\*/g, '<em class="text-orange-500">$1</em>');
+                processed = processed.replace(/^• (.+)$/gm, '<div class="flex items-start space-x-2 my-2"><span class="text-green-500 mt-1 text-sm">•</span><span>$1</span></div>');
+                processed = processed.replace(/^(\d+)\. (.+)$/gm, '<div class="flex items-start space-x-2 my-2"><span class="text-orange-600 font-medium min-w-[20px]">$1.</span><span>$2</span></div>');
+
+                return processed;
+            }
+
+            createSourceInfo(sourceType, loadedSources) {
+                if (!loadedSources || loadedSources.length === 0) return '';
+                
+                const sourceConfig = {
+                    pdf: { color: 'bg-red-100 text-red-600', icon: '📄' },
+                    website: { color: 'bg-green-100 text-green-600', icon: '🌐' }
+                };
+
+                return loadedSources.map(source => {
+                    const config = sourceConfig[source] || { color: 'bg-gray-100 text-gray-600', icon: '📎' };
+                    return `<span class="text-xs ${config.color} px-2 py-1 rounded-full flex items-center space-x-1">
+                        <span>\${config.icon}</span>
+                        <span>\${source.toUpperCase()}</span>
+                    </span>`;
+                }).join('');
+            }
+
+            handleQuickAction(action) {
+                if (!this.hasAnySource()) {
+                    this.showNotification('Please load product information first', 'error');
+                    return;
+                }
+
+                const actionMessages = {
+                    'product-overview': 'Give me a brief overview of the main products.',
+                    'pricing': 'What pricing information is available?',
+                    'features': 'What are the key features of the products?',
+                    'compare': 'How do the different products compare?'
+                };
+
+                this.sendMessage(actionMessages[action]);
+            }
+
+            hasAnySource() {
+                return Object.values(this.loadedSources).some(loaded => loaded);
+            }
+
+            enableChat() {
+                this.chatInput.disabled = false;
+                this.sendButton.disabled = false;
+                this.voiceBtn.disabled = false;
+                this.chatInput.placeholder = "Ask Wolf AI about products, features, pricing...";
+                this.updateSourceCount();
+                this.updateActiveSourcesDisplay();
+            }
+
+            updateSourceStatus(type, loaded, result = null) {
+                const statusDiv = document.getElementById(`${type}-status`);
+                const indicator = document.getElementById(`${type}-indicator`);
+                const statusText = document.getElementById(`${type}-status-text`);
+
+                if (loaded) {
+                    statusDiv.classList.remove('opacity-50');
+                    statusDiv.classList.add('loaded');
+                    indicator.className = 'w-3 h-3 bg-green-400 rounded-full animate-pulse';
+                    
+                    if (type === 'pdf' && result) {
+                        statusText.textContent = `${result.filename} (${result.word_count.toLocaleString()} words)`;
+                    } else if (type === 'website' && result) {
+                        statusText.textContent = `${new URL(result.url).hostname} (${result.word_count.toLocaleString()} words)`;
+                    }
+                } else {
+                    statusDiv.classList.add('opacity-50');
+                    statusDiv.classList.remove('loaded');
+                    indicator.className = 'w-3 h-3 bg-red-400 rounded-full';
+                    statusText.textContent = 'Not loaded';
+                }
+            }
+
+            updateSourceCount() {
+                const count = Object.values(this.loadedSources).filter(Boolean).length;
+                this.sourceCount.textContent = count;
+                this.sourceCount.className = count > 0 ? 'text-lg font-bold text-green-600 ml-2' : 'text-lg font-bold text-red-600 ml-2';
+            }
+
+            updateActiveSourcesDisplay() {
+                const activeTypes = Object.entries(this.loadedSources)
+                    .filter(([_, loaded]) => loaded)
+                    .map(([type, _]) => type);
+
+                const icons = { pdf: '📄', website: '🌐' };
+                
+                this.activeSourcesDiv.innerHTML = activeTypes.map(type => 
+                    `<span class="text-sm">${icons[type]}</span>`
+                ).join('');
+            }
+
+            showUploadProgress() {
+                this.uploadStatus.classList.remove('hidden');
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 15;
+                    if (progress > 90) progress = 90;
+                    this.progressBar.style.width = progress + '%';
+                    this.uploadProgress.textContent = Math.round(progress) + '%';
+                }, 100);
+                
+                this.uploadInterval = interval;
+            }
+
+            hideUploadProgress() {
+                if (this.uploadInterval) {
+                    clearInterval(this.uploadInterval);
+                }
+                this.progressBar.style.width = '100%';
+                this.uploadProgress.textContent = '100%';
+                setTimeout(() => {
+                    this.uploadStatus.classList.add('hidden');
+                }, 1000);
+            }
+
+            setLoadingState(loading) {
+                this.isLoading = loading;
+                this.sendButton.disabled = loading;
+                
+                if (loading) {
+                    this.sendIcon.innerHTML = `
+                        <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    `;
+                    this.sendText.textContent = 'Analyzing...';
+                } else {
+                    this.sendIcon.innerHTML = `
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    `;
+                    this.sendText.textContent = 'Send';
+                }
+            }
+
+            showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.id = 'typing-message';
+                typingDiv.className = 'message-bubble animate-fade-in';
+                
+                const messageCard = document.createElement('div');
+                messageCard.className = 'glass-card rounded-2xl p-4 mr-8';
+                
+                const messageContainer = document.createElement('div');
+                messageContainer.className = 'flex items-start space-x-3';
+                
+                                const avatarContainer = document.createElement('div');
+                avatarContainer.className = 'wolf-gradient w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-bold text-white';
+                avatarContainer.textContent = '🐺';
+                
+                const contentContainer = document.createElement('div');
+                contentContainer.className = 'flex-1';
+                
+                const headerContainer = document.createElement('div');
+                headerContainer.className = 'flex items-center space-x-2 mb-2';
+                
+                const assistantLabel = document.createElement('span');
+                assistantLabel.className = 'font-semibold text-orange-600';
+                assistantLabel.textContent = 'Wolf AI';
+                
+                const thinkingBadge = document.createElement('span');
+                thinkingBadge.className = 'text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded-full';
+                thinkingBadge.textContent = 'Thinking...';
+                
+                const dotsContainer = document.createElement('div');
+                dotsContainer.className = 'flex space-x-2';
+                
+                for (let i = 0; i < 3; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = `w-3 h-3 bg-orange-400 rounded-full animate-bounce`;
+                    if (i > 0) dot.style.animationDelay = `${i * 0.1}s`;
+                    dotsContainer.appendChild(dot);
+                }
+                
+                headerContainer.appendChild(assistantLabel);
+                headerContainer.appendChild(thinkingBadge);
+                contentContainer.appendChild(headerContainer);
+                contentContainer.appendChild(dotsContainer);
+                messageContainer.appendChild(avatarContainer);
+                messageContainer.appendChild(contentContainer);
+                messageCard.appendChild(messageContainer);
+                typingDiv.appendChild(messageCard);
+                
+                this.chatMessages.appendChild(typingDiv);
+                this.scrollToBottom();
+            }
+
+            hideTypingIndicator() {
+                const typingMessage = document.getElementById('typing-message');
+                if (typingMessage) {
+                    typingMessage.remove();
+                }
+            }
+
+            updateCharCount() {
+                const length = this.chatInput.value.length;
+                this.charCount.textContent = `${length}/500`;
+                this.charCount.className = length > 450 ? 'text-xs text-red-500' : 'text-xs text-gray-500';
+                
+                if (length > 500) {
+                    this.chatInput.value = this.chatInput.value.substring(0, 500);
+                    this.updateCharCount();
+                }
+            }
+
+            setupAutoResize() {
+                this.chatInput.addEventListener('input', () => {
+                    this.chatInput.style.height = 'auto';
+                    this.chatInput.style.height = Math.min(this.chatInput.scrollHeight, 120) + 'px';
+                });
+            }
+
+            async clearAllSources() {
+                if (!confirm('Are you sure you want to clear all product information and conversation history?')) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/clear_source', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ source_type: 'all' })
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.loadedSources = { pdf: false, website: false };
+                        
+                        ['pdf', 'website'].forEach(type => {
+                            this.updateSourceStatus(type, false);
+                        });
+                        
+                        this.websiteInput.value = '';
+                        this.pdfInput.value = '';
+                        
+                        this.chatInput.disabled = true;
+                        this.sendButton.disabled = true;
+                        this.voiceBtn.disabled = true;
+                        this.chatInput.placeholder = "Upload product information to start...";
+                        
+                        const welcomeMessage = this.chatMessages.firstElementChild;
+                        this.chatMessages.innerHTML = '';
+                        this.chatMessages.appendChild(welcomeMessage);
+                        
+                        this.updateSourceCount();
+                        this.updateActiveSourcesDisplay();
+                        this.showNotification('All product information cleared successfully', 'success');
+                    }
+                } catch (error) {
+                    this.showNotification('Failed to clear sources: ' + error.message, 'error');
+                }
+            }
+
+            async updateStatus() {
+                try {
+                    const response = await fetch('/api/status');
+                    const status = await response.json();
+                    
+                    if (status.sources) {
+                        Object.entries(status.sources).forEach(([type, loaded]) => {
+                            if (loaded !== this.loadedSources[type]) {
+                                this.loadedSources[type] = loaded;
+                                this.updateSourceStatus(type, loaded);
+                            }
+                        });
+                        this.updateSourceCount();
+                        this.updateActiveSourcesDisplay();
+                    }
+                } catch (error) {
+                    console.error('Status update failed:', error);
+                }
+            }
+
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `fixed top-6 right-6 z-50 p-4 rounded-2xl shadow-2xl animate-slide-down max-w-sm border`;
+                
+                const typeStyles = {
+                    success: 'bg-green-50 border-green-200 text-green-800',
+                    error: 'bg-red-50 border-red-200 text-red-800',
+                    info: 'bg-orange-50 border-orange-200 text-orange-800'
+                };
+
+                const typeIcons = {
+                    success: '<svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>',
+                    error: '<svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>',
+                    info: '<svg class="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                };
+
+                notification.className += ' ' + typeStyles[type];
+
+                notification.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <div class="flex-shrink-0 mt-0.5">
+                            ${typeIcons[type]}
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium">${message}</p>
+                        </div>
+                        <button class="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors" onclick="this.parentElement.parentElement.remove()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.style.transform = 'translateX(100%)';
+                        notification.style.opacity = '0';
+                        setTimeout(() => notification.remove(), 300);
+                    }
+                }, 5000);
+            }
+        }
+
+        // Global variable for chatbot instance
+        let chatbot;
+
+        // Initialize Wolf AI chatbot when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            chatbot = new WolfAIChatbot();
+        });
+
+        // Ensure voices are loaded
+        if (window.speechSynthesis) {
+            const loadVoices = () => {
+                const voices = window.speechSynthesis.getVoices();
+                if (voices.length > 0 && chatbot) {
+                    chatbot.voices = voices;
+                    console.log('Voices loaded:', voices.length);
+                }
+            };
+
+            loadVoices();
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+            setTimeout(loadVoices, 1000);
+        }
+    </script>
+</body>
+</html>
