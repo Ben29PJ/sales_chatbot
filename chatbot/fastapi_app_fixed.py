@@ -677,9 +677,36 @@ async def serve_react_app(path: str):
 
 if __name__ == "__main__":
     import uvicorn
+    import signal
+    import sys
+    
+    def signal_handler(sig, frame):
+        print("\n\nShutting down server gracefully...")
+        sys.exit(0)
+    
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     print("Wolf AI - Sales Assistant Chatbot (FastAPI)")
     print("Supports: PDF Catalogs, Brand Websites, Speech-to-Text, Text-to-Speech")
     print("FastAPI Backend: http://localhost:8000")
     print("React Frontend: http://localhost:3001")
-    print("\nStarting server...")
-    uvicorn.run("fastapi_app_fixed:app", host="0.0.0.0", port=8000, reload=True)
+    print("\nStarting server... (Press Ctrl+C to stop)")
+    
+    try:
+        uvicorn.run(
+            "fastapi_app_fixed:app", 
+            host="127.0.0.1", 
+            port=8000, 
+            reload=False,  # Disable reload to prevent process hanging
+            access_log=True,
+            log_level="info",
+            timeout_keep_alive=30,
+            timeout_graceful_shutdown=10
+        )
+    except KeyboardInterrupt:
+        print("\nServer stopped by user.")
+    except Exception as e:
+        print(f"\nServer error: {e}")
+        sys.exit(1)
