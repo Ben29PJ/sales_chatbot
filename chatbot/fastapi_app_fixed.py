@@ -92,6 +92,7 @@ try:
     
     # Create or get collections for each source type
     pdf_collection = None
+    website_collection = None
     rag_initialized = True
     print("[OK] RAG system initialized successfully")
 except Exception as e:
@@ -99,6 +100,7 @@ except Exception as e:
     embedding_model = None
     chroma_client = None
     pdf_collection = None
+    website_collection = None
     rag_initialized = False
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
@@ -197,6 +199,89 @@ def rag_search_pdf(query: str, n_results: int = 3) -> List[str]:
         
     except Exception as e:
         print(f"[ERROR] RAG search error: {e}")
+        return []
+
+def create_website_vector_store(website_content: str, url: str) -> bool:
+    """Create vector store for website content using RAG"""
+    global website_collection
+    
+    if not rag_initialized or not website_content:
+        return False
+    
+    try:
+        # Clear existing website collection if it exists
+        try:
+            chroma_client.delete_collection(name="website_documents")
+        except Exception:
+            pass
+        
+        # Create new collection for website content
+        website_collection = chroma_client.create_collection(
+            name="website_documents",
+            metadata={"description": "Website content embeddings for RAG retrieval"}
+        )
+        
+        # Split website content into chunks
+        chunks = chunk_text(website_content, chunk_size=400, overlap=50)
+        
+        if not chunks:
+            return False
+        
+        print(f"[WEBSITE] Processing website: {url} -> {len(chunks)} chunks")
+        
+        # Generate embeddings for chunks
+        embeddings = embedding_model.encode(chunks).tolist()
+        
+        # Create IDs for chunks
+        ids = [f"chunk_{i}_{url.replace('/', '_').replace(':', '')}" for i in range(len(chunks))]
+        
+        # Prepare metadata for chunks
+        metadatas = [{
+            "source": "website",
+            "url": url,
+            "chunk_index": i,
+            "content_preview": chunk[:100] + "..." if len(chunk) > 100 else chunk
+        } for i, chunk in enumerate(chunks)]
+        
+        # Add to vector store
+        website_collection.add(
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        print(f"[OK] Website vector store created: {len(chunks)} chunks indexed")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Error creating website vector store: {e}")
+        return False
+
+def rag_search_website(query: str, n_results: int = 3) -> List[str]:
+    """Perform semantic search on website content using RAG"""
+    if not rag_initialized or not website_collection:
+        return []
+    
+    try:
+        # Generate embedding for the query
+        query_embedding = embedding_model.encode([query]).tolist()
+        
+        # Search for similar content
+        results = website_collection.query(
+            query_embeddings=query_embedding,
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"]
+        )
+        
+        # Return the most relevant chunks
+        if results['documents'] and len(results['documents']) > 0:
+            return results['documents'][0]  # First result set
+        
+        return []
+        
+    except Exception as e:
+        print(f"[ERROR] Website RAG search error: {e}")
         return []
 
 def analyze_question_complexity(user_message: str) -> dict:
@@ -375,15 +460,32 @@ def find_relevant_content(user_message: str, max_context_tokens: int = 1500):
                     rag_content = "\n\n".join(rag_chunks[:3])  # Top 3 most relevant chunks
                     combined_content += f"\n\n=== {source_type.upper()} SOURCE (RAG) ===\n{rag_content}"
                     retrieval_method = "rag"
-                    print(f"[OK] RAG found {len(rag_chunks)} relevant chunks")
+                    print(f"[OK] PDF RAG found {len(rag_chunks)} relevant chunks")
                 else:
                     # Fallback to traditional keyword search for PDF
-                    print("[FALLBACK] RAG found no results, falling back to keyword search...")
+                    print("[FALLBACK] PDF RAG found no results, falling back to keyword search...")
                     content = source_data['content']
                     combined_content += f"\n\n=== {source_type.upper()} SOURCE (KEYWORD) ===\n{content}"
                     retrieval_method = "keyword_fallback"
+            elif source_type == 'website' and rag_initialized and website_collection:
+                # Use RAG for website content - semantic search
+                print(f"[RAG] Using RAG semantic search for website content...")
+                rag_chunks = rag_search_website(user_message, n_results=5)
+                
+                if rag_chunks:
+                    # Join the most relevant chunks
+                    rag_content = "\n\n".join(rag_chunks[:3])  # Top 3 most relevant chunks
+                    combined_content += f"\n\n=== {source_type.upper()} SOURCE (RAG) ===\n{rag_content}"
+                    retrieval_method = "rag"
+                    print(f"[OK] Website RAG found {len(rag_chunks)} relevant chunks")
+                else:
+                    # Fallback to traditional keyword search for website
+                    print("[FALLBACK] Website RAG found no results, falling back to keyword search...")
+                    content = source_data['content']
+                    combined_content += f"\n\n=== {source_type.upper()} SOURCE (KEYWORD) ===\n{content}"
+                    retrieval_method = "keyword_fallback" if retrieval_method == "none" else retrieval_method
             else:
-                # Use traditional method for website content or when RAG is unavailable
+                # Use traditional method when RAG is unavailable
                 content = source_data['content']
                 combined_content += f"\n\n=== {source_type.upper()} SOURCE ===\n{content}"
                 retrieval_method = "keyword" if retrieval_method == "none" else retrieval_method
@@ -646,14 +748,19 @@ async def load_website(
             'url': url,
             'loaded': True
         }
+        
+        # Create RAG vector store for enhanced website retrieval
+        rag_success = create_website_vector_store(content, url)
+        rag_status = "✅ RAG enabled" if rag_success else "⚠️ RAG unavailable (fallback to keyword search)"
 
         return {
             "success": True,
-            "message": "Brand website content loaded successfully",
+            "message": f"Brand website content loaded successfully - {rag_status}",
             "url": url,
             "text_length": len(content),
             "word_count": len(content.split()),
-            "source_type": "website"
+            "source_type": "website",
+            "rag_enabled": rag_success
         }
 
     except HTTPException:
@@ -935,7 +1042,7 @@ async def clear_source(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        global pdf_collection
+        global pdf_collection, website_collection
         source_type = clear_data.source_type
 
         if source_type == 'all':
@@ -944,14 +1051,18 @@ async def clear_source(
                 source['loaded'] = False
             conversations.clear()
             
-            # Clear RAG vector store
-            if rag_initialized and pdf_collection:
+            # Clear all RAG vector stores
+            if rag_initialized:
                 try:
-                    chroma_client.delete_collection(name="pdf_documents")
-                    pdf_collection = None
-                    print("✅ RAG vector store cleared")
+                    if pdf_collection:
+                        chroma_client.delete_collection(name="pdf_documents")
+                        pdf_collection = None
+                    if website_collection:
+                        chroma_client.delete_collection(name="website_documents")
+                        website_collection = None
+                    print("✅ All RAG vector stores cleared")
                 except Exception as e:
-                    print(f"⚠️ Could not clear RAG vector store: {e}")
+                    print(f"⚠️ Could not clear RAG vector stores: {e}")
             
             return {"success": True, "message": "All sources and RAG data cleared"}
         elif source_type == 'pdf':
@@ -968,6 +1079,20 @@ async def clear_source(
                     print(f"⚠️ Could not clear PDF RAG vector store: {e}")
             
             return {"success": True, "message": "PDF source and RAG data cleared"}
+        elif source_type == 'website':
+            knowledge_sources['website']['content'] = ''
+            knowledge_sources['website']['loaded'] = False
+            
+            # Clear website RAG vector store
+            if rag_initialized and website_collection:
+                try:
+                    chroma_client.delete_collection(name="website_documents")
+                    website_collection = None
+                    print("✅ Website RAG vector store cleared")
+                except Exception as e:
+                    print(f"⚠️ Could not clear website RAG vector store: {e}")
+            
+            return {"success": True, "message": "Website source and RAG data cleared"}
         elif source_type in knowledge_sources:
             knowledge_sources[source_type]['content'] = ''
             knowledge_sources[source_type]['loaded'] = False
