@@ -1,23 +1,25 @@
 @echo off
-echo Wolf AI Server Manager
-echo ======================
-
-REM Kill any existing Python processes that might be running the server
-echo Checking for existing server processes...
-for /f "tokens=2" %%i in ('tasklist /FI "IMAGENAME eq python.exe" ^| findstr python') do (
-    echo Found Python process %%i, checking if it's our server...
-    taskkill /F /PID %%i >nul 2>&1
-)
-
-REM Wait a moment for processes to terminate
-timeout /t 2 /nobreak >nul
-
-echo Starting Wolf AI FastAPI server...
-echo URL: http://localhost:8000
-echo Press Ctrl+C to stop the server
+echo 🐺 Wolf AI RAG-Enhanced Chatbot Server
+echo =========================================
 echo.
 
-REM Run the FastAPI application
-python fastapi_app_fixed.py
+REM Check if Python is available
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Python is not installed or not in PATH
+    pause
+    exit /b 1
+)
 
+echo ✅ Python found
+echo 🔄 Using server manager for better control...
+echo.
+
+REM Use the server manager for better process control
+python server_manager.py start
+
+echo.
+echo 👋 Use 'python server_manager.py stop' to stop the server
+echo 📊 Use 'python server_manager.py status' to check server status  
+echo.
 pause

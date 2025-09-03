@@ -18,9 +18,15 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 import jwt
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import uuid
 from dotenv import load_dotenv
+
+# RAG imports
+from sentence_transformers import SentenceTransformer
+import chromadb
+import numpy as np
+from chromadb.config import Settings
 
 # Load environment variables
 load_dotenv()
@@ -71,6 +77,127 @@ server_start_time = datetime.now()
 
 # Enhanced conversation storage with business context
 conversation_analytics = {}
+
+# ================================
+# RAG (Retrieval-Augmented Generation) System
+# ================================
+
+# Initialize RAG components
+try:
+    # Initialize embedding model (lightweight model for faster processing)
+    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    
+    # Initialize ChromaDB client
+    chroma_client = chromadb.Client()
+    
+    # Create or get collections for each source type
+    pdf_collection = None
+    rag_initialized = True
+    print("[OK] RAG system initialized successfully")
+except Exception as e:
+    print(f"[WARN] RAG initialization failed: {e}")
+    embedding_model = None
+    chroma_client = None
+    pdf_collection = None
+    rag_initialized = False
+
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
+    """Split text into overlapping chunks for better RAG performance"""
+    if not text or len(text.strip()) == 0:
+        return []
+    
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = ' '.join(words[i:i + chunk_size])
+        if len(chunk.strip()) > 50:  # Only include substantial chunks
+            chunks.append(chunk.strip())
+    
+    return chunks
+
+def create_pdf_vector_store(pdf_content: str, filename: str) -> bool:
+    """Create vector store for PDF content using RAG"""
+    global pdf_collection
+    
+    if not rag_initialized or not pdf_content:
+        return False
+    
+    try:
+        # Clear existing collection if it exists
+        try:
+            chroma_client.delete_collection(name="pdf_documents")
+        except Exception:
+            pass
+        
+        # Create new collection
+        pdf_collection = chroma_client.create_collection(
+            name="pdf_documents",
+            metadata={"description": "PDF document embeddings for RAG retrieval"}
+        )
+        
+        # Split PDF content into chunks
+        chunks = chunk_text(pdf_content, chunk_size=400, overlap=50)
+        
+        if not chunks:
+            return False
+        
+        print(f"[PDF] Processing PDF: {filename} -> {len(chunks)} chunks")
+        
+        # Generate embeddings for chunks
+        embeddings = embedding_model.encode(chunks).tolist()
+        
+        # Create IDs for chunks
+        ids = [f"chunk_{i}_{filename}" for i in range(len(chunks))]
+        
+        # Prepare metadata for chunks
+        metadatas = [{
+            "source": "pdf",
+            "filename": filename,
+            "chunk_index": i,
+            "content_preview": chunk[:100] + "..." if len(chunk) > 100 else chunk
+        } for i, chunk in enumerate(chunks)]
+        
+        # Add to vector store
+        pdf_collection.add(
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=metadatas,
+            ids=ids
+        )
+        
+        print(f"[OK] PDF vector store created: {len(chunks)} chunks indexed")
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Error creating PDF vector store: {e}")
+        return False
+
+def rag_search_pdf(query: str, n_results: int = 3) -> List[str]:
+    """Perform semantic search on PDF content using RAG"""
+    if not rag_initialized or not pdf_collection:
+        return []
+    
+    try:
+        # Generate embedding for the query
+        query_embedding = embedding_model.encode([query]).tolist()
+        
+        # Search for similar content
+        results = pdf_collection.query(
+            query_embeddings=query_embedding,
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"]
+        )
+        
+        # Return the most relevant chunks
+        if results['documents'] and len(results['documents']) > 0:
+            return results['documents'][0]  # First result set
+        
+        return []
+        
+    except Exception as e:
+        print(f"[ERROR] RAG search error: {e}")
+        return []
 
 def analyze_question_complexity(user_message: str) -> dict:
     """Analyze the complexity and type of business question"""
@@ -164,8 +291,18 @@ def load_pdf_from_file(file_path: str) -> str:
                 page_text = page.extract_text() or ""
                 text += page_text + "\n"
         return text.strip()
-    except Exception as e:
-        return f"Error reading PDF: {str(e)}"
+    except Exception as pdf_error:
+        # If PDF parsing fails, try to read as text file (for testing)
+        try:
+            with open(file_path, 'r', encoding='utf-8') as text_file:
+                content = text_file.read()
+                if len(content.strip()) > 0:
+                    print(f"[WARN] PDF parsing failed, treating as text file: {str(pdf_error)[:100]}")
+                    return content.strip()
+        except Exception as text_error:
+            print(f"[ERROR] Both PDF and text parsing failed: {str(text_error)}")
+        
+        return f"Error reading PDF: {str(pdf_error)}"
 
 def scrape_website_content(url: str) -> str:
     try:
@@ -217,30 +354,53 @@ def extract_business_insights(content: str) -> dict:
     return insights
 
 def find_relevant_content(user_message: str, max_context_tokens: int = 1500):
-    """Enhanced content finder with business intelligence"""
+    """Enhanced content finder with RAG and business intelligence"""
     user_words = user_message.lower().split()
     combined_content = ""
     loaded_sources = []
     business_insights = {}
+    retrieval_method = "none"
 
     for source_type, source_data in knowledge_sources.items():
         if source_data['loaded'] and source_data['content']:
-            content = source_data['content']
-            combined_content += f"\n\n=== {source_type.upper()} SOURCE ===\n{content}"
             loaded_sources.append(source_type)
             
-            # Extract business insights
-            insights = extract_business_insights(content)
+            if source_type == 'pdf' and rag_initialized and pdf_collection:
+                # Use RAG for PDF content - semantic search
+                print(f"[RAG] Using RAG semantic search for PDF content...")
+                rag_chunks = rag_search_pdf(user_message, n_results=5)
+                
+                if rag_chunks:
+                    # Join the most relevant chunks
+                    rag_content = "\n\n".join(rag_chunks[:3])  # Top 3 most relevant chunks
+                    combined_content += f"\n\n=== {source_type.upper()} SOURCE (RAG) ===\n{rag_content}"
+                    retrieval_method = "rag"
+                    print(f"[OK] RAG found {len(rag_chunks)} relevant chunks")
+                else:
+                    # Fallback to traditional keyword search for PDF
+                    print("[FALLBACK] RAG found no results, falling back to keyword search...")
+                    content = source_data['content']
+                    combined_content += f"\n\n=== {source_type.upper()} SOURCE (KEYWORD) ===\n{content}"
+                    retrieval_method = "keyword_fallback"
+            else:
+                # Use traditional method for website content or when RAG is unavailable
+                content = source_data['content']
+                combined_content += f"\n\n=== {source_type.upper()} SOURCE ===\n{content}"
+                retrieval_method = "keyword" if retrieval_method == "none" else retrieval_method
+            
+            # Extract business insights (works for both RAG and traditional content)
+            insights = extract_business_insights(source_data['content'])
             business_insights[source_type] = insights
 
     if not combined_content:
         return "", "none", loaded_sources, {}
 
-    # Enhanced scoring with business context
+    # Enhanced scoring with business context (only needed for non-RAG content)
     max_words = int(max_context_tokens * 0.75)
     all_words = combined_content.split()
     
-    if len(all_words) > max_words:
+    if len(all_words) > max_words and retrieval_method != "rag":
+        # Traditional keyword-based filtering for website content
         paragraphs = combined_content.split('\n\n')
         scored = []
         
@@ -285,8 +445,11 @@ def find_relevant_content(user_message: str, max_context_tokens: int = 1500):
             count_words += w
 
         combined_content = ("\n\n".join(selected)).strip() or " ".join(all_words[:max_words])
+    elif len(all_words) > max_words:
+        # For RAG content, simply truncate if too long (RAG already selected most relevant)
+        combined_content = " ".join(all_words[:max_words])
 
-    return combined_content, "combined", loaded_sources, business_insights
+    return combined_content, retrieval_method, loaded_sources, business_insights
 
 def filter_technical_content(response: str) -> str:
     technical_keywords = {
@@ -440,14 +603,19 @@ async def load_pdf(
             'filename': pdf.filename,
             'loaded': True
         }
+        
+        # Create RAG vector store for enhanced retrieval
+        rag_success = create_pdf_vector_store(pdf_content, pdf.filename)
+        rag_status = "✅ RAG enabled" if rag_success else "⚠️ RAG unavailable (fallback to keyword search)"
 
         return {
             "success": True,
-            "message": "Product catalog PDF loaded successfully",
+            "message": f"Product catalog PDF loaded successfully - {rag_status}",
             "filename": pdf.filename,
             "text_length": len(pdf_content),
             "word_count": len(pdf_content.split()),
-            "source_type": "pdf"
+            "source_type": "pdf",
+            "rag_enabled": rag_success
         }
 
     except HTTPException:
@@ -767,6 +935,7 @@ async def clear_source(
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        global pdf_collection
         source_type = clear_data.source_type
 
         if source_type == 'all':
@@ -774,7 +943,31 @@ async def clear_source(
                 source['content'] = ''
                 source['loaded'] = False
             conversations.clear()
-            return {"success": True, "message": "All sources cleared"}
+            
+            # Clear RAG vector store
+            if rag_initialized and pdf_collection:
+                try:
+                    chroma_client.delete_collection(name="pdf_documents")
+                    pdf_collection = None
+                    print("✅ RAG vector store cleared")
+                except Exception as e:
+                    print(f"⚠️ Could not clear RAG vector store: {e}")
+            
+            return {"success": True, "message": "All sources and RAG data cleared"}
+        elif source_type == 'pdf':
+            knowledge_sources['pdf']['content'] = ''
+            knowledge_sources['pdf']['loaded'] = False
+            
+            # Clear PDF RAG vector store
+            if rag_initialized and pdf_collection:
+                try:
+                    chroma_client.delete_collection(name="pdf_documents")
+                    pdf_collection = None
+                    print("✅ PDF RAG vector store cleared")
+                except Exception as e:
+                    print(f"⚠️ Could not clear PDF RAG vector store: {e}")
+            
+            return {"success": True, "message": "PDF source and RAG data cleared"}
         elif source_type in knowledge_sources:
             knowledge_sources[source_type]['content'] = ''
             knowledge_sources[source_type]['loaded'] = False
@@ -848,38 +1041,76 @@ async def serve_react_app(path: str):
     else:
         raise HTTPException(status_code=404, detail="Frontend not built")
 
+# Add shutdown endpoint for manual control
+@app.post("/api/shutdown")
+async def shutdown_server():
+    """Endpoint to manually shutdown the server"""
+    import os
+    print("[SHUTDOWN] Manual shutdown requested")
+    os._exit(0)  # Force exit
+
 if __name__ == "__main__":
     import uvicorn
-    import signal
     import sys
+    import platform
     
-    def signal_handler(sig, frame):
-        print("\n\nShutting down server gracefully...")
-        sys.exit(0)
-    
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Windows-specific signal handling
+    if platform.system() == "Windows":
+        try:
+            import signal
+            def signal_handler(sig, frame):
+                print("\n[SHUTDOWN] Graceful shutdown initiated...")
+                try:
+                    # Clean up resources
+                    if rag_initialized and pdf_collection:
+                        print("[CLEANUP] Clearing RAG resources...")
+                        chroma_client.delete_collection(name="pdf_documents")
+                except Exception:
+                    pass
+                print("[SHUTDOWN] Server stopped gracefully.")
+                sys.exit(0)
+            
+            # Register Windows-compatible signal handlers
+            signal.signal(signal.SIGINT, signal_handler)
+            if hasattr(signal, 'SIGBREAK'):
+                signal.signal(signal.SIGBREAK, signal_handler)
+                
+        except Exception as e:
+            print(f"[WARN] Signal handler setup failed: {e}")
     
     print("Wolf AI - Sales Assistant Chatbot (FastAPI)")
     print("Supports: PDF Catalogs, Brand Websites, Speech-to-Text, Text-to-Speech")
     print("FastAPI Backend: http://localhost:8000")
     print("React Frontend: http://localhost:3001")
-    print("\nStarting server... (Press Ctrl+C to stop)")
+    print("\nStarting server...")
+    print("[INFO] Press Ctrl+C to stop, or POST to /api/shutdown")
+    print("[INFO] Server will run until manually stopped\n")
     
     try:
-        uvicorn.run(
-            "fastapi_app_fixed:app", 
-            host="127.0.0.1", 
-            port=8000, 
-            reload=False,  # Disable reload to prevent process hanging
+        # Use uvicorn.Config and Server for better control
+        config = uvicorn.Config(
+            "fastapi_app_fixed:app",
+            host="127.0.0.1",
+            port=8000,
+            reload=False,
             access_log=True,
             log_level="info",
             timeout_keep_alive=30,
-            timeout_graceful_shutdown=10
+            timeout_graceful_shutdown=5,
+            lifespan="on"  # Enable lifespan events
         )
+        
+        server = uvicorn.Server(config)
+        server.run()
+        
     except KeyboardInterrupt:
-        print("\nServer stopped by user.")
+        print("\n[SHUTDOWN] Server stopped by user (Ctrl+C)")
+        sys.exit(0)
+    except SystemExit:
+        print("\n[SHUTDOWN] Server stopped via system exit")
+        sys.exit(0)
     except Exception as e:
-        print(f"\nServer error: {e}")
+        print(f"\n[ERROR] Server error: {e}")
         sys.exit(1)
+    finally:
+        print("[CLEANUP] Server shutdown complete")
